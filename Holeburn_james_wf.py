@@ -58,12 +58,10 @@ def full_sweep(SpecAn):
 
 
 
-def record_trace1(SpecAn, filename = '', compensated = 'N', sweep_again = 'Y', n=1, burn_time = ''):
-    ''' Writes a single trace from HP8560 SpecAn (taken via trigger) 
-        to a data file "datestring + filename.txt"
+def create_file(SpecAn, filename = '', compensated = 'N', sweep_again = 'Y', n=1, burn_time = ''):
+    ''' Creates a file based on "datestring + filename.txt"
         
-        Compensated, 'Y'/'N', will subtract data from background reading SIH.run_offset.
-        Sweep_again, 'Y'/'N', will return the SpecAn back to continous sweep mode.
+        Compensated and Sweep again appear in the file header
      '''
 ##     
     #Date/Time information
@@ -78,7 +76,7 @@ def record_trace1(SpecAn, filename = '', compensated = 'N', sweep_again = 'Y', n
     date_string = year + '-' + month + '-' + day
     time_string = hour + ":" + minute + "." + second
     
-    #Set up filename
+    #Set up filename, either simple or records time created aswell as date
 ##     filepath = "C:\Users\Milos\Desktop\James\\" + date_string + filename + ' ' + str(minute)+';'+str(usec) +'.txt'
     filepath = "C:\Users\Milos\Desktop\James\\" + date_string + filename +'.txt'
     try:
@@ -103,7 +101,7 @@ def record_trace1(SpecAn, filename = '', compensated = 'N', sweep_again = 'Y', n
     file.write('Data is offset subtracted: ' + compensated + '\n' + '\n')
     
     
-    #Write 
+    #Optional/ extra header information
     optional_header = ''
     file.write(optional_header + '\n')
     file.write('Burn time: ' + str(burn_time) + '\n')
@@ -122,83 +120,68 @@ def record_trace1(SpecAn, filename = '', compensated = 'N', sweep_again = 'Y', n
 
 
 
-    
-def record_trace2(SpecAn, filepath, filename = '', compensated = 'N', sweep_again = 'Y', n=1, burn_time = ''):
-    #It will now trigger when signal is sent to the external trigger
-    SpecAn.write('SP?')
-    span = float(SpecAn.read())  
-    SpecAn.write('CF?')
-    center = float(SpecAn.read())    
+ def record_trace(SpecAn, filepath, filename = '', compensated = 'N', sweep_again = 'Y', n=1, burn_time = ''):
+     ''' Records a single trace from SpecAn '''
+     SpecAn.write('SP?')
+     span = float(SpecAn.read())  
+     SpecAn.write('CF?')
+     center = float(SpecAn.read())    
+ 
+     SpecAn.write('TS')
+     #Waits for Spectrum Analyser to finish Data sweep
+     SpecAn.wait_for_srq(timeout = 30000)
+ ##     import time
+ ##     #time.sleep(10)
+     
+ 
+     file = open(filepath,'a')
+     x = np.linspace(center - span/2, center + span/2, 601)
+     spec_data_temp = np.zeros(601)
+   
+     #Gets the trace from the SpecAn
+     SpecAn.write('TRA?')
+     binary = SpecAn.read_raw()
+     spec_data_temp = np.frombuffer(binary, '>u2') # Data format is big-endian unsigned integers
+     
+     
+     spec_data_db = SIH.convert2db(SpecAn,spec_data_temp)
+     
+     if compensated == 'Y':
+         spec_data_db = compensate(spec_data_temp, span)
 
-    SpecAn.write('TS')
-    #Waits for Spectrum Analyser to finish Data sweep
-    SpecAn.wait_for_srq(timeout = 30000)
-##     import time
-##     #time.sleep(10)
-    
-
-    file = open(filepath,'a')
+     #Conjoins both x and spec_data_temp vectors and saves them to file     
+     data = np.vstack([x, spec_data_db]).T
+     np.savetxt(file, data, fmt='%.10e')
+ 
+         
+     file.close()
+     pylab.ion()
+ 
+     if sweep_again == 'Y':
+         HP8560E_SpecAn_Trigger("FREE", 'CONTS', SpecAn)
+         
+     return x, spec_data_db, filepath     
+     
+     
+def compensate(data, span):
+    ''' Takes data from SpecAn trace and subtracts background from "run_offset" '''
+     if span == 2900000000.0:
+         save_file = "C:\\Users\\Milos\Desktop\\Er_Experiment_Interface_Code\\amplitude_offset_full.csv"
+     else:
+         save_file = "C:\\Users\\Milos\Desktop\\Er_Experiment_Interface_Code\\amplitude_offset.csv"   
+     amplitude_offset = np.loadtxt(save_file,delimiter=",")
+     compensated_data = np.subtract(data,amplitude_offset)
+     
+     return compensated_data
     
         
-    #Finds the off set save file (either full span or not)
-    if span == 2900000000.0:
-        save_file = "C:\\Users\\Milos\Desktop\\Er_Experiment_Interface_Code\\amplitude_offset_full.csv"
-    else:
-        save_file = "C:\\Users\\Milos\Desktop\\Er_Experiment_Interface_Code\\amplitude_offset.csv"   
-    amplitude_offset = np.loadtxt(save_file,delimiter=",")
-    
-    #Waits for data, and converts into Hex
-    x = np.linspace(center - span/2, center + span/2, 601)
-    spec_data_temp = np.zeros(601)
-  
-    #Gets the trace from the SpecAn
-    SpecAn.write('TRA?')
-    binary = SpecAn.read_raw()
-    spec_data_temp = np.frombuffer(binary, '>u2') # Data format is big-endian unsigned integers
-
-
-
-    
-    #Convert the data to dB based on SpecAn settings
-    spec_data_db = SIH.convert2db(SpecAn,spec_data_temp)
-    
-    #Background subtracting
-    if compensated == 'Y':
-        compensated_data = np.subtract(spec_data_db,amplitude_offset)
-    else:
-        compensated_data = spec_data_temp
-    spec_data_db = compensated_data
-    
-    #Conjoins both x and spec_data_temp vectors and saves them to file     
-    data = np.vstack([x, spec_data_db]).T
-    np.savetxt(file, data, fmt='%.10e')
-
-        
-    file.close()
-    pylab.ion()
-    
-    #Plots data
-##     plt.plot(x,spec_data_db)
-##     plt.pause(1)
-##     sleep(10)
-##     pb.Sequence([([],1000*ms)]+[(['ch2','ch4','ch5'], 100*ms)] + [(['ch2','ch5'], 100*ms)],loop=False)
-##     filepath = record_trace1(SpecAn, compensated = 'Y', n=1, burn_time = 0.01)
-    #Returns the SpecAn back to constant trigger
-
-
-    if sweep_again == 'Y':
-        HP8560E_SpecAn_Trigger("FREE", 'CONTS', SpecAn)
-        
-    return x, spec_data_db, filepath
-    
     
     
     
     
     
 def background(SpecAn, freq, span, res = 10*kHz, sweep = 1*s):
-    ''' Run second
-    Semi automates the background measurements on the HP8560E '''
+    ''' Semi automates the background measurements on the HP8560E '''
     
     #First step laser off the absorption
     #Set SpecAn to be a desired freq, span...
@@ -307,6 +290,15 @@ def spin_polarise(SpecAn, SpecAn_Bool, start_freq, pumps = 10, direction = 'back
     #Sets pulseblaster to run VCO via ch3
     time = pumps*sweep_time
     print 'Spin polarizing for: ' + str(time) + ' seconds'
+    
+    array = create_sequence(time)
+    pb.Sequence(array,loop=False) 
+    
+    
+    
+def create_sequence(time):
+    ''' Takes in the 'time' for the spin polarizing and creates an appropriate 
+    pulse blaster array'''
     if time > 10: #Pulseblaster does not like values above 10s
         no_of_loops = int(time)/10
         remainder = round(time%10,3)
@@ -319,11 +311,10 @@ def spin_polarise(SpecAn, SpecAn_Bool, start_freq, pumps = 10, direction = 'back
         else:
             array = array + [(['ch2','ch5'], 1*ms)]
 
-        pb.Sequence(array,loop=False)    
     else:
-        pb.spin_pump(time)
+        array = [(['ch3'],time)] + [(['ch2','ch5'], 1*ms)]
         
-    return time
+    return array
     
 
 
@@ -394,11 +385,11 @@ def burn_sequence(burn, burn_freq, power, hl = 'low'):
 ##         burn_freq = 2.525*GHz
     #Hole burning sequence
     run_offset(SpecAn, freq = 2*GHz, span = 1000*MHz, res = 30*kHz, sweep = 50*ms, full_span = 'N', show_window = 'N')
-    filepath = record_trace1(SpecAn, compensated = 'Y', n=1, burn_time = burn)
+    filepath = create_file(SpecAn, compensated = 'Y', n=1, burn_time = burn)
     windfreak(burn_freq, power, hl, filepath, write = 1)
     pb.hole_burn(burn)
 ##     for i in range(30):
-    x,y,filepath=record_trace2(SpecAn, filepath, compensated = 'Y', n=1, burn_time = burn)
+    x,y,filepath=record_trace(SpecAn, filepath, compensated = 'Y', n=1, burn_time = burn)
     sleep(0.5*s)
 
 ##         #Rempump will only go as low as 875 MHz
@@ -410,14 +401,15 @@ def burn_sequence(burn, burn_freq, power, hl = 'low'):
     return x,y
 
 def burn_n_sit(burn, freq1,power,hl):
+    ''' Burns a hole and then increases the span to watch the hole and carrier hole move. '''
 ##         burn = 0.02*s
 ##         freq1 = 2.560*GHz
     #Hole burning sequence
     run_offset(SpecAn, freq = freq1, span = 1*MHz, res = 30*kHz, sweep = 50*ms, full_span = 'N', show_window = 'N')
-    filepath = record_trace1(SpecAn, compensated = 'Y', n=1, burn_time = burn)
+    filepath = create_file(SpecAn, compensated = 'Y', n=1, burn_time = burn)
     windfreak(freq1, power, hl, filepath, write = 1)
     pb.hole_burn(burn)
-    x,y,filepath=record_trace2(SpecAn, filepath, compensated = 'Y', n=1, burn_time = burn)
+    x,y,filepath=record_trace(SpecAn, filepath, compensated = 'Y', n=1, burn_time = burn)
     sleep(0.1*s)
 
     SpecAn.write('CF ' + str(freq1))
@@ -427,6 +419,9 @@ def burn_n_sit(burn, freq1,power,hl):
 
 
 def spin_pump_seq(freq,pumps,record = "False"):
+    ''' Runs spin polarize sequence and allows for the ability to record the spectrum
+        just after spin pumping.
+    '''
     time = spin_polarise(SpecAn, SpecAn_Bool, freq, pumps, direction = 'forwards')
     sleep(time) #Wait for spin polarize to take place.
     
@@ -435,49 +430,15 @@ def spin_pump_seq(freq,pumps,record = "False"):
     save_file = "C:\\Users\\Milos\Desktop\\Er_Experiment_Interface_Code\\amplitude_offset_full.csv"
     amplitude_offset = np.loadtxt(save_file,delimiter=",")
     
-    #This if statement is a rewritten version of record_trace2
+    #This if statement is a rewritten version of record_trace
     if record == 'True':
-        filepath = record_trace1(SpecAn, compensated = 'N', n=1, burn_time = 0)
+        filepath = create_file(SpecAn, compensated = 'N', n=1, burn_time = 0)
         
         array = [([], 0.5*s)] + [(['ch5'], 500*ms), (['ch2','ch4','ch5'], 100*ms)] + [(['ch2','ch5'], 100*ms)]
         pb.Sequence(array,loop=False)
         
-        SpecAn.write('SP?')
-        span = float(SpecAn.read())  
-        SpecAn.write('CF?')
-        center = float(SpecAn.read())    
+        [x,y,f] = record_trace(SpecAn, filepath, filename = '', compensated = 'Y', sweep_again = 'Y', n = 1, burn_time = 0)
 
-        SpecAn.write('TS')
-        #Waits for Spectrum Analyser to finish Data sweep
-        SpecAn.wait_for_srq(timeout = 30000)
-        
-        file = open(filepath,'a')
-        
-        x = np.linspace(center - span/2, center + span/2, 601)
-        spec_data_temp = np.zeros(601)
-      
-        #Gets the trace from the SpecAn
-        SpecAn.write('TRA?')
-        binary = SpecAn.read_raw()
-        spec_data_temp = np.frombuffer(binary, '>u2') # Data format is big-endian unsigned integers
-        spec_data_db = SIH.convert2db(SpecAn,spec_data_temp)
-
-        compensated_data = np.subtract(spec_data_db,amplitude_offset)
-        
-        
-        #Conjoins both x and spec_data_temp vectors and saves them to file     
-        data = np.vstack([x, compensated_data]).T
-        np.savetxt(file, data, fmt='%.10e')
-        sleep(0.01)
-            
-        file.close()
-        pylab.ion()
-            
-
-        HP8560E_SpecAn_Trigger("FREE", 'CONTS', SpecAn)
-##         full_sweep(SpecAn)    
-##         SIH.free_run_plot_window('Y',full_span = 'Y')
-        
  
 
     
@@ -516,16 +477,16 @@ if __name__ == "__main__":
 
 
 ##     SpecAn.write('LG 2')
-##     filepath = record_trace1(SpecAn, compensated = 'Y', n=1, burn_time = 0)
+##     filepath = create_file(SpecAn, compensated = 'Y', n=1, burn_time = 0)
 ##     pb.Sequence([(['ch5'], 0.5*s)] + [(['ch2','ch5','ch4'], 100*ms)] + [(['ch2','ch5'], 100*ms)], loop=False)
-##     x,y,p=record_trace2(SpecAn, filepath, compensated = 'Y', n=1, burn_time = 0)
+##     x,y,p=record_trace(SpecAn, filepath, compensated = 'Y', n=1, burn_time = 0)
 ##     sleep(0.1)
 ##  
 ##     SpecAn.write('LG 1')
 ##     SpecAn.write('FB ' + str(stop_f))
-##     filepath = record_trace1(SpecAn, compensated = 'Y', n=1, burn_time = 0, filename = 'zoom')
+##     filepath = create_file(SpecAn, compensated = 'Y', n=1, burn_time = 0, filename = 'zoom')
 ##     pb.Sequence([(['ch5'], 0.5*s)] + [(['ch2','ch5','ch4'], 100*ms)] + [(['ch2','ch5'], 100*ms)], loop=False)
-##     x,y,p=record_trace2(SpecAn, filepath, compensated = 'Y', n=1, burn_time = 0)
+##     x,y,p=record_trace(SpecAn, filepath, compensated = 'Y', n=1, burn_time = 0)
 
 ##     sleep(0.1)
 ##     SpecAn.write('LG 2')
