@@ -362,18 +362,15 @@ def windfreak(freq, dB, power_state, filepath, talk = 'YES', write = 0):
 def full_offset(SpecAn, freq = 1*GHz):
     ''' Runs offsets for two frequency ranges, full span 0 - 2.9 GHz and a smaller
     offset 0 - freq.'''
-    SpecAn.write('LG 2')
     full_sweep(SpecAn)
     run_offset(SpecAn, full_span = 'Y')
     sleep(0.1)
     
-    SpecAn.write('LG 1')
     s = freq
     f = freq/2
     run_offset(SpecAn, freq = f, span = s, full_span = 'N')
     sleep(0.1)
     
-    SpecAn.write('LG 2')
     full_sweep(SpecAn)
 ##     SIH.free_run_plot_window('Y',full_span = 'Y')
 ##     run_offset(SpecAn, freq = 1.8*GHz, span = 100*MHz, res = 30*kHz, sweep = 50*ms, full_span = 'N', show_window = 'N')
@@ -385,7 +382,7 @@ def burn_sequence(burn, burn_freq, power, hl = 'low', record = 'True'):
         If record is true, then the spectrum analyser will record the resulting hole '''
     filepath = ''
     if record == 'True':
-        run_offset(SpecAn, freq = 2*GHz, span = 1000*MHz, res = 30*kHz, sweep = 50*ms, full_span = 'N', show_window = 'N')
+        run_offset(SpecAn, freq = burn_freq, span = 1*MHz, res = 30*kHz, sweep = 50*ms, full_span = 'N', show_window = 'N')
         filepath = create_file(SpecAn, compensated = 'Y', n=1, burn_time = burn)
         windfreak(burn_freq, power, hl, filepath, write = 1)
     else:
@@ -442,20 +439,42 @@ def spin_pump_seq(freq,pumps,record = "False"):
         [x,y,f] = record_trace(SpecAn, filepath, filename = '', compensated = 'Y', sweep_again = 'Y', n = 1, burn_time = 0)
         
         
-def spin_jump_seq(freq = 2.4*GHz, reps = 1):
+def spin_jump_seq(freq = 2.4*GHz, reps = 1, record_jump = 'N'):
     ''' Spin polarize crystal into |7/2>. 
     
     Burn on the m = -1 to make a |5/2> anti hole. Burn on that hole to shift to |3/2>. 
     Repeat this to ensure max population has been shifted down to lower state. 
     '''
     freq_b = freq - 1.3*GHz #This should be the freq of the peak of the delta m = -1 |7/2>
+    array = [107.9, 217]*MHz
+    spin_pump_seq(freq,800,record = "False") #Spin polarize the delta m = 1 feature    
     
-    spin_pump_seq(freq,800,record = "False") #Spin polarize the delta m = 1 feature
-    for i in range(reps): #"Spin jump" multiple times to ensure max population moved
-        burn_sequence(0.05,freq_b,-15,hl = 'high',record = 'False') #This should burn in the peak of the delta m = -1 |7/2>
-        burn_sequence(0.05,freq_b - 107.9*MHz,-15,hl = 'high',record = 'False') #Should burn on the delta m = -1 |+5/2> anti hole
-        burn_sequence(0.05,freq_b - 217*MHz,-15,hl = 'high',record = 'True') #Should burn on the delta m = -1 |+3/2> anti hole
-    
+    if record == 'N'
+        for i in range(reps): #"Spin jump" multiple times to ensure max population moved
+            #Check span setting in burn_sequence (set to ~ 1MHz)
+            
+            if i == reps-1:
+                burn_sequence(0.05,freq_b,-15,hl = 'high',record = 'False') #This should burn in the peak of the delta m = -1 |7/2>
+                burn_sequence(0.05,freq_b - array[0],-15,hl = 'high',record = 'False') #Should burn on the delta m = -1 |+5/2> anti hole
+                burn_sequence(0.05,freq_b - array[1],-15,hl = 'high',record = 'True') #Should burn on the delta m = -1 |+3/2> anti hole
+            else:
+                burn_sequence(0.05,freq_b,-15,hl = 'high',record = 'False') #This should burn in the peak of the delta m = -1 |7/2>
+                burn_sequence(0.05,freq_b - array[0],-15,hl = 'high',record = 'False') #Should burn on the delta m = -1 |+5/2> anti hole
+                burn_sequence(0.05,freq_b - array[1],-15,hl = 'high',record = 'False') #Should burn on the delta m = -1 |+3/2> anti hole
+    else:
+        for i in range(reps): #"Spin jump" multiple times to ensure max population moved
+            #Check span setting in burn_sequence (set to ~ 1MHz)
+            
+            if i == reps-1:
+                burn_sequence(0.05,freq_b,-15,hl = 'high',record = 'True', filename = '1') #This should burn in the peak of the delta m = -1 |7/2>
+                burn_sequence(0.05,freq_b - array[0],-15,hl = 'high',record = 'True', filename = '2') #Should burn on the delta m = -1 |+5/2> anti hole
+                burn_sequence(0.05,freq_b - array[1],-15,hl = 'high',record = 'True', filename = '3') #Should burn on the delta m = -1 |+3/2> anti hole
+            else:
+                burn_sequence(0.05,freq_b,-15,hl = 'high',record = 'False') #This should burn in the peak of the delta m = -1 |7/2>
+                burn_sequence(0.05,freq_b - array[0],-15,hl = 'high',record = 'False') #Should burn on the delta m = -1 |+5/2> anti hole
+                burn_sequence(0.05,freq_b - array[1],-15,hl = 'high',record = 'False') #Should burn on the delta m = -1 |+3/2> anti hole
+                
+        
     sleep(1)
     SIH.free_run_plot_window('N',full_span = 'N')
 
