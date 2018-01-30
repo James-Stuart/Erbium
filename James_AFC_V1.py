@@ -43,7 +43,8 @@ ns = 10**-9
 
 def multi_record(SpecAn,d_time,n):
     '''Takes 'n' scans on the HP Spectrum Analyzer at ~d_time intervals.
-       This is an augmented version of record_trace from holeburn_james.'''
+       This is an augmented version of record_trace from holeburn_james.
+       Also records the times for each data recording event.'''
     #Run the following first to set up the text file.
     #hb.create_file(SpecAn, filename = '', compensated = 'N', sweep_again = 'Y', n=1, burn_time = '')
 
@@ -56,6 +57,7 @@ def multi_record(SpecAn,d_time,n):
     x = np.linspace(center - span/2, center + span/2, 601)
     spec_data_db = np.zeros((601,n)
     
+    record_time = []
     for i in range(n):
         SpecAn.write('TS')
         #Waits for Spectrum Analyser to finish Data sweep
@@ -66,6 +68,8 @@ def multi_record(SpecAn,d_time,n):
         SpecAn.write('TRA?')
         binary = SpecAn.read_raw()
         spec_data_temp = np.frombuffer(binary, '>u2') # Data format is big-endian unsigned integers
+        
+        record_time.append(datetime.now().strftime("%H:%M:%S.%f"))
         
         
         spec_data_db(:,i) = SIH.convert2db(SpecAn,spec_data_temp)
