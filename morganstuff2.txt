@@ -1,0 +1,2 @@
+arr=array([getTrace() for k in range(30)])
+plot(arr.T)
